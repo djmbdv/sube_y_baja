@@ -1,233 +1,356 @@
-import javax.imageio.ImageIO;
-import javax.swing.JButton;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JFrame;
-import javax.swing.JPanel;
-
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
-import java.awt.FlowLayout;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.GridLayout;
-import java.awt.Image;
+import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
+import javax.swing.UIManager;
+import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.GridLayout;
 import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.image.BufferedImage;
-import java.io.File;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
-/**
- * InnerMain
- */
-class Carta {
-    public int  number;
-    public int shape;
-    public Image image;
-
-    public static int ANCHO_CARTA = 201;
-    public static int ALTO_CARTA = 320;
-    public static File[] files = new File[4];
-
-    public Carta(int number, int shape) throws IOException{
-        this.number = number > 7 ? number + 2 : number;
-        this.shape = shape;
-
-        if(Carta.files[shape]== null){
-            Carta.files[shape] = new File(getShapeString().toLowerCase() + ".jpg");
-
-        }
-        this.image = ImageIO.read(Carta.files[shape]).getSubimage(ANCHO_CARTA * ((number-1)%5), ALTO_CARTA * ((number-1)/5),
-        ANCHO_CARTA , ALTO_CARTA);
-    }
-
-    public String getShapeString(){
-    String shapeString ="";
-       switch (this.shape) {
-            case 0:
-                shapeString = "Oro";
-                break;
-            case 1:
-                shapeString = "Copas";
-                break;
-            case 2:
-                shapeString = "Espada";
-                break;
-            case 3:
-                shapeString = "Basto";
-                break;
-        
-            default:
-                break;
-        }
-
-        return shapeString;
-
-    }
-    @Override
-    public String toString(){
-        String shapeString = "";
-        switch (this.shape) {
-            case 0:
-                shapeString = "Oro";
-                break;
-            case 1:
-                shapeString = "Copas";
-                break;
-            case 2:
-                shapeString = "Espada";
-                break;
-            case 3:
-                shapeString = "Basto";
-                break;
-        
-            default:
-                break;
-        }
-        return "Carta{" + "number=" + number + " ," + shapeString + "}";
-    }
-}
-
+import java.util.Random;
 
 class Main extends JFrame {
-    private JButton bBaja;
-    private JButton bSube;
-    private JButton bIgual;
-    private JPanel panel;
-    private JLabel labelLastCarta;
-    public List<Carta> mazo;
-    public Carta lastCarta;
-    public JLabel cardCount;
-    public JPanel panelCarta;
+    private static final Color TEXT_PRIMARY = new Color(246, 235, 214);
+    private static final Color TEXT_SECONDARY = new Color(196, 182, 156);
+    private static final Color PANEL_BG = new Color(34, 28, 24, 210);
+    private static final Color BTN_BAJA = new Color(126, 39, 50);
+    private static final Color BTN_SUBE = new Color(186, 118, 37);
+    private static final Color BTN_IGUAL = new Color(66, 69, 79);
+    private static final Color BTN_OTRA_MANO = new Color(38, 118, 81);
+    private static final Color TABLE_BG_START = new Color(25, 24, 29);
+    private static final Color TABLE_BG_END = new Color(20, 58, 41);
+    private static final Color TABLE_GLOW = new Color(255, 214, 133, 32);
+    private static final Color CARD_STAGE_START = new Color(53, 95, 72);
+    private static final Color CARD_STAGE_END = new Color(24, 49, 37);
+    private static final Color CARD_STAGE_BORDER = new Color(181, 153, 92);
 
+    private static final Font TITLE_FONT = new Font("Serif", Font.BOLD, 42);
+    private static final Font SUBTITLE_FONT = new Font("SansSerif", Font.PLAIN, 17);
+    private static final Font INFO_FONT = new Font("SansSerif", Font.BOLD, 14);
 
-    public Carta getCarta(){
-        System.out.println("getCarta");
-        
-        int index =  ((int)(Math.random() * mazo.size()))%mazo.size();
+    private static final int DEFAULT_ROUND_DELAY_MS = 360;
+    private static final int DOUBLE_LOSE_DELAY_MS = 520;
+
+    private final Random random = new Random();
+    private final List<Carta> mazo = new LinkedList<>();
+
+    private GameButton bBaja;
+    private GameButton bSube;
+    private GameButton bIgual;
+    private GameButton bReiniciar;
+    private Carta lastCarta;
+    private CardCountBadge cardCount;
+    private CardPanel panelCarta;
+
+    private enum GuessAction {
+        UP,
+        DOWN,
+        SAME
+    }
+
+    private enum RoundOutcome {
+        SAFE,
+        LOSE,
+        DOUBLE_LOSE,
+        DOUBLE_WIN
+    }
+
+    public Main() throws IOException {
+        super("Carticas");
+
+        initMazo();
+        lastCarta = drawRandomCard();
+
+        panelCarta = new CardPanel(CARD_STAGE_START, CARD_STAGE_END, CARD_STAGE_BORDER);
+        panelCarta.setCarta(lastCarta);
+
+        cardCount = new CardCountBadge();
+        updateCardCount();
+
+        bBaja = createGameButton("BAJA", BTN_BAJA, GuessAction.DOWN);
+        bSube = createGameButton("SUBE", BTN_SUBE, GuessAction.UP);
+        bIgual = createGameButton("IGUAL", BTN_IGUAL, GuessAction.SAME);
+        bReiniciar = createRestartButton();
+
+        GradientPanel root = new GradientPanel(TABLE_BG_START, TABLE_BG_END, TABLE_GLOW);
+        root.setLayout(new BorderLayout(22, 22));
+        root.setBorder(BorderFactory.createEmptyBorder(22, 22, 22, 22));
+        root.add(buildHeader(), BorderLayout.NORTH);
+        root.add(buildCenter(), BorderLayout.CENTER);
+        root.add(buildControls(), BorderLayout.SOUTH);
+
+        setContentPane(root);
+        configureFrame();
+        showStartDialog();
+    }
+
+    private void configureFrame() {
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setMinimumSize(new Dimension(980, 740));
+        pack();
+        setLocationRelativeTo(null);
+        setVisible(true);
+    }
+
+    private JPanel buildHeader() {
+        JLabel title = new JLabel("Mesa de Sube y Baja");
+        title.setFont(TITLE_FONT);
+        title.setForeground(TEXT_PRIMARY);
+
+        JLabel subtitle = new JLabel("Adivina la que viene... y bebe si te equivocás 😉");
+        subtitle.setFont(SUBTITLE_FONT);
+        subtitle.setForeground(TEXT_SECONDARY);
+
+        JPanel titleBlock = new JPanel();
+        titleBlock.setOpaque(false);
+        titleBlock.setLayout(new BoxLayout(titleBlock, BoxLayout.Y_AXIS));
+        title.setAlignmentX(LEFT_ALIGNMENT);
+        subtitle.setAlignmentX(LEFT_ALIGNMENT);
+        titleBlock.add(title);
+        titleBlock.add(Box.createVerticalStrut(4));
+        titleBlock.add(subtitle);
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.add(titleBlock, BorderLayout.WEST);
+        header.add(cardCount, BorderLayout.EAST);
+        return header;
+    }
+
+    private JPanel buildCenter() {
+        JPanel center = new JPanel(new BorderLayout());
+        center.setOpaque(false);
+        center.add(panelCarta, BorderLayout.CENTER);
+        return center;
+    }
+
+    private JPanel buildControls() {
+        JPanel controls = new JPanel(new GridLayout(1, 4, 12, 0));
+        controls.setOpaque(false);
+        controls.add(bBaja);
+        controls.add(bSube);
+        controls.add(bIgual);
+        controls.add(bReiniciar);
+        return controls;
+    }
+
+    private GameButton createGameButton(String text, Color background, GuessAction action) {
+        GameButton button = new GameButton(text, background);
+        styleActionButton(button);
+        button.addActionListener((ActionEvent ae) -> playRound(action));
+        return button;
+    }
+
+    private GameButton createRestartButton() {
+        GameButton button = new GameButton("OTRA MANO", BTN_OTRA_MANO);
+        styleActionButton(button);
+        button.addActionListener((ActionEvent ae) -> restartGame());
+        return button;
+    }
+
+    private Carta drawRandomCard() {
+        int index = random.nextInt(mazo.size());
         Carta selectedCard = mazo.get(index);
         mazo.remove(index);
-        System.out.println(mazo.size());
-        return selectedCard; 
+        return selectedCard;
     }
 
-    public void showLost(){
-        
-        JOptionPane.showMessageDialog(this.panel,"1 shut", "Bebe", JOptionPane.WARNING_MESSAGE);
+    private void setGuessButtonsEnabled(boolean enabled) {
+        bBaja.setEnabled(enabled);
+        bSube.setEnabled(enabled);
+        bIgual.setEnabled(enabled);
     }
 
-    public void showDoubleLost(){
-        JOptionPane.showMessageDialog(this.panel,"2 shut", "Bebe Doble", JOptionPane.WARNING_MESSAGE);
+    private void setAllControlsEnabled(boolean enabled) {
+        setGuessButtonsEnabled(enabled);
+        bReiniciar.setEnabled(enabled);
     }
 
-    public void showDoubleWin(){
-        JOptionPane.showMessageDialog(this.panel,"2 shut", "Eliges Quiien bebe", JOptionPane.WARNING_MESSAGE);
+    private void playRound(GuessAction action) {
+        Carta newCarta = drawRandomCard();
+        RoundOutcome outcome = resolveOutcome(action, newCarta);
+
+        lastCarta = newCarta;
+        panelCarta.setCarta(newCarta);
+        updateCardCount();
+        completeRound(outcome, mazo.isEmpty());
     }
 
-    public void gameOver(){
-        JOptionPane.showMessageDialog(this.panel,"FONDO BLANCO", "Game Over", JOptionPane.OK_OPTION);
-    }
-    public void gol(String action){
-        
-        Carta newCarta = getCarta();
-        this.labelLastCarta.setForeground(newCarta.number >  this.lastCarta.number ? Color.GREEN : Color.RED);
-        this.labelLastCarta.setForeground(newCarta.number ==  this.lastCarta.number ? Color.BLACK : Color.RED);
-        this.labelLastCarta.setText(newCarta.toString());
-        this.cardCount.setText("Restan " + String.valueOf(mazo.size()) + " cartas.");   
+    private RoundOutcome resolveOutcome(GuessAction action, Carta newCarta) {
         switch (action) {
-            case "up":
-                if(newCarta.number  <  lastCarta.number) showLost();
-                else if(newCarta.number  ==  lastCarta.number) showDoubleLost();
+            case UP:
+                if (newCarta.number < lastCarta.number) {
+                    return RoundOutcome.LOSE;
+                }
+                return newCarta.number == lastCarta.number ? RoundOutcome.DOUBLE_LOSE : RoundOutcome.SAFE;
+            case DOWN:
+                if (newCarta.number > lastCarta.number) {
+                    return RoundOutcome.LOSE;
+                }
+                return newCarta.number == lastCarta.number ? RoundOutcome.DOUBLE_LOSE : RoundOutcome.SAFE;
+            case SAME:
+                return newCarta.number == lastCarta.number ? RoundOutcome.DOUBLE_WIN : RoundOutcome.LOSE;
+            default:
+                return RoundOutcome.SAFE;
+        }
+    }
+
+    private void animateOutcome(RoundOutcome outcome) {
+        switch (outcome) {
+            case LOSE:
+                panelCarta.playAlert(new Color(217, 73, 89), false);
+                panelCarta.playShake(false);
                 break;
-            case "down":
-                if(newCarta.number  >  lastCarta.number) showLost();
-                else if(newCarta.number  ==  lastCarta.number) showDoubleLost();
+            case DOUBLE_LOSE:
+                panelCarta.playAlert(new Color(196, 33, 58), true);
+                panelCarta.playShake(true);
                 break;
-            case "same":
-                if(newCarta.number  != lastCarta.number) showLost();
-                else if(newCarta.number  ==  lastCarta.number) showDoubleWin();
+            case DOUBLE_WIN:
+                panelCarta.playAlert(new Color(31, 160, 116), true);
+                break;
             default:
                 break;
         }
-        if(mazo.size() == 0) gameOver();
-        this.cardCount.repaint();
-        this.lastCarta = newCarta;
-        this.labelLastCarta.repaint();
-       this.panel.repaint();;
     }
-    public void initMazo() throws IOException{
-        this.mazo = new LinkedList<Carta>();
-        for(int i  = 0; i < 40; i++){
-            mazo.add(new Carta(i%10 + 1, i/10 ));
+
+    private void showOutcomeDialog(RoundOutcome outcome) {
+        switch (outcome) {
+            case LOSE:
+                showWarningDialog("Se te fue la mano. BEBE.", "Te toca");
+                break;
+            case DOUBLE_LOSE:
+                showWarningDialog("Te clavaste duro. BEBE DOBLE.", "Te jodiste");
+                break;
+            case DOUBLE_WIN:
+                showInfoDialog("Manda a Beber a todos DOBLE", "La pegaste");
+                break;
+            default:
+                break;
         }
     }
 
-    public Main() throws IOException{
-        super("Carticas");
-        initMazo();
-        
-        BufferedImage i = ImageIO.read(new File("oro.jpg"));  
-        
-        this.panelCarta = new JPanel(){
-            @Override
-            public void paint(Graphics g){
-                super.paint(g);
-                Graphics2D g2 = (Graphics2D)g;
-                g2.drawImage(lastCarta.image, 0, 0, this);
+    private void completeRound(RoundOutcome outcome, boolean gameEnded) {
+        setAllControlsEnabled(false);
+        animateOutcome(outcome);
 
+        Timer timer = new Timer(getRoundDelay(outcome), e -> {
+            ((Timer) e.getSource()).stop();
+
+            if (outcome != RoundOutcome.SAFE) {
+                showOutcomeDialog(outcome);
             }
-        };
 
-        this.panelCarta.setSize(125, 300);
-        this.panelCarta.setMinimumSize(new Dimension(125,300));
-        this.panelCarta.setBackground(Color.gray);
-      //  this.panelCarta
-        this.panelCarta.setLayout(new FlowLayout());
-        this.lastCarta = getCarta();
-        this.cardCount = new JLabel("Restan " + String.valueOf(mazo.size()) + " cartas.");   
-        this.panel = new JPanel();
-        this.panel.setLayout(new GridLayout(3,4));
-        this.labelLastCarta = new JLabel(lastCarta.toString());
-        for (Carta c : mazo) {
-            System.out.println(c);
-        }
-        this.setSize(800,700);
-        
-        this.setDefaultCloseOperation(3);
-        setVisible(true);
-        
-        this.bBaja = new JButton("Baja ");
-        this.bSube = new JButton("Sube ^");
-        this.bIgual = new JButton("Igual =");
-        bBaja.addActionListener(new ActionListener() {
-           public void actionPerformed(ActionEvent ae) {
-                gol("down");
-           }
+            if (gameEnded) {
+                gameOver();
+            }
+
+            if (mazo.isEmpty()) {
+                setGuessButtonsEnabled(false);
+                bReiniciar.setEnabled(true);
+            } else {
+                setAllControlsEnabled(true);
+            }
         });
-        bSube.addActionListener(new ActionListener() {
-           public void actionPerformed(ActionEvent ae) {
-                gol("up");
-           }
-        });
-        bIgual.addActionListener(new ActionListener() {
-           public void actionPerformed(ActionEvent ae) {
-                gol("same");
-           }
-        });
-        this.panel.add(panelCarta);
-        this.panel.add(this.labelLastCarta);
-        this.panel.add(bBaja);
-        this.panel.add(bSube);
-        this.panel.add(bIgual);
-        this.panel.add(cardCount);
-        
-        this.add(panel);
-        repaint();
+        timer.setRepeats(false);
+        timer.start();
     }
 
-    public static void main(String[] args) throws IOException {
-        new Main();
+    private int getRoundDelay(RoundOutcome outcome) {
+        return outcome == RoundOutcome.DOUBLE_LOSE ? DOUBLE_LOSE_DELAY_MS : DEFAULT_ROUND_DELAY_MS;
+    }
+
+    private void gameOver() {
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Se acabo el mazo. Quieres jugar otra mano?",
+                "Se cerro la ronda",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.INFORMATION_MESSAGE
+        );
+
+        if (choice == JOptionPane.YES_OPTION) {
+            restartGame();
+        }
+    }
+
+    private void restartGame() {
+        try {
+            initMazo();
+            lastCarta = drawRandomCard();
+            panelCarta.setCarta(lastCarta);
+            updateCardCount();
+            setAllControlsEnabled(true);
+        } catch (IOException e) {
+            showErrorDialog("No pude barajear de nuevo.");
+        }
+    }
+
+    private void initMazo() throws IOException {
+        mazo.clear();
+        for (int i = 0; i < 40; i++) {
+            mazo.add(new Carta(i % 10 + 1, i / 10));
+        }
+    }
+
+    private void styleActionButton(GameButton button) {
+        button.setFont(new Font("SansSerif", Font.BOLD, 20));
+        button.setOpaque(false);
+        button.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setPreferredSize(new Dimension(180, 66));
+    }
+
+    private void updateCardCount() {
+        cardCount.setCount(mazo.size());
+    }
+
+    private void showStartDialog() {
+        JLabel msg = new JLabel("Bueno, arranco la mano: liga si la proxima carta sube, baja o sale igual.");
+        msg.setFont(new Font("SansSerif", Font.PLAIN, 15));
+        JOptionPane.showMessageDialog(this, msg, "Vamos a darle", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void showWarningDialog(String message, String title) {
+        JOptionPane.showMessageDialog(this, message, title, JOptionPane.WARNING_MESSAGE);
+    }
+
+    private void showInfoDialog(String message, String title) {
+        JOptionPane.showMessageDialog(this, message, title, JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void showErrorDialog(String message) {
+        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
+    }
+
+    public static void main(String[] args) {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception ex) {
+            // If the system look and feel fails, Swing uses the default one.
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            try {
+                new Main();
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(
+                        null,
+                        "No se pudieron cargar las imagenes de cartas.",
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE
+                );
+            }
+        });
     }
 }
